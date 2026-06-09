@@ -5,7 +5,7 @@
 //! primitive for picking up new ingress rules without dropping
 //! connections.
 //!
-//! See `docs/design/shiku/tunnel.md` §5.3.
+//! See `docs/ingress.md`.
 
 use anyhow::{anyhow, bail, Context, Result};
 use std::path::{Path, PathBuf};

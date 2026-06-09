@@ -15,7 +15,7 @@
 //!   3. **Not claimed by another app.** No other registered app on this
 //!      box can declare the same hostname. Self-republish is fine.
 //!
-//! See `docs/design/shiku/tunnel.md` §6.3.
+//! See `docs/ingress.md`.
 
 use shiku_types::AppName;
 

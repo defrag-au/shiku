@@ -12,7 +12,7 @@
 //!     reuse one of the same name) and reconstructs the runtime token from
 //!     the response.
 //!
-//! See `docs/design/shiku/tunnel.md` §5.
+//! See `docs/ingress.md`.
 
 use std::path::PathBuf;
 

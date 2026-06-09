@@ -10,7 +10,7 @@
 //! Credentials: a CF API token with `Zone.DNS:Edit` on the relevant
 //! zones. The token is stored on the box as a Shiku-managed secret
 //! (`CF_API_TOKEN` under the `__shiku__` pseudo-app — see
-//! `docs/design/shiku/tunnel.md` §4.1).
+//! `docs/ingress.md`).
 //!
 //! ## Error shape
 //!

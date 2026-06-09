@@ -3,8 +3,7 @@
 //! Runs as a `systemd --user` service per service-user on the box. Listens on
 //! `/run/user/<uid>/shikud.sock` and serves Shiku protocol requests.
 //!
-//! See `docs/design/shiku/deploy.md` for the design and
-//! `docs/design/shiku/implementation-plan.md` for the build plan.
+//! See `docs/deploying.md` for the deploy workflow.
 //!
 //! Phase 1 status: socket listener answering Ping (Step 1.5). Real request
 //! handling (apps, releases, secrets, activation) lands in Phase 2+.

@@ -17,7 +17,7 @@
 //! dispatch layer at the call site is responsible for not having
 //! committed any persistent state before the publish completes.
 //!
-//! See `docs/design/shiku/tunnel.md` §6.4.
+//! See `docs/ingress.md`.
 
 use anyhow::{Context, Result};
 use std::collections::HashSet;

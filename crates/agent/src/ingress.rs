@@ -10,7 +10,7 @@
 //! from the apps registry, no persistent ordering state, and any
 //! manual edits are intentionally discarded on the next reconcile.
 //!
-//! See `docs/design/shiku/tunnel.md` §6.4–6.5.
+//! See `docs/ingress.md`.
 
 use std::path::{Path, PathBuf};
 

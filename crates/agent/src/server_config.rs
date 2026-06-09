@@ -2,7 +2,7 @@
 //!
 //! Written by `shiku tunnel bootstrap` and read by the agent when validating
 //! `public` hostnames or rendering cloudflared ingress. See
-//! `docs/design/shiku/tunnel.md`.
+//! `docs/ingress.md`.
 //!
 //! On-disk shape:
 //!

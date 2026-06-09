@@ -1,9 +1,14 @@
 [package]
 name = "shiku-runtime"
-version = "0.1.0"
-edition = "2021"
-authors = ["Damon Oehlman <damon.oehlman@gmail.com>"]
 description = "Service-side runtime for the Shiku platform — implements the deploy contract."
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["deploy", "shiku", "systemd", "secrets"]
+categories = ["development-tools", "web-programming"]
 
 [dependencies]
 shiku-types = { path = "../types" }

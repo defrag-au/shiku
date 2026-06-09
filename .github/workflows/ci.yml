@@ -1,0 +1,78 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+  cross-build:
+    name: cross-build (aarch64 musl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-musl
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      # The CLI cross-compiles the agent with cargo-zigbuild; mirror that here
+      # so the release-target build keeps working for the agent + CLI binaries.
+      #
+      # Zig comes from the pypi `ziglang` wheel (cargo-zigbuild's documented
+      # install path — it invokes `python3 -m ziglang`). This avoids the zig
+      # release mirrors, which don't host every build. Pinned to a stable Zig
+      # release validated to cross-build this workspace.
+      - name: Install Zig (ziglang wheel)
+        run: |
+          python3 -m venv "$HOME/zigvenv"
+          "$HOME/zigvenv/bin/pip" install 'ziglang==0.15.1'
+          # Expose a `zig` executable (cargo-zigbuild's first-choice discovery).
+          printf '#!/usr/bin/env bash\nexec "%s/bin/python" -m ziglang "$@"\n' "$HOME/zigvenv" \
+            > "$HOME/zigvenv/bin/zig"
+          chmod +x "$HOME/zigvenv/bin/zig"
+          echo "$HOME/zigvenv/bin" >> "$GITHUB_PATH"
+
+      - name: Verify Zig
+        run: zig version
+
+      - name: Install cargo-zigbuild
+        run: cargo install --locked cargo-zigbuild
+
+      - name: Build agent + CLI for the box target
+        run: cargo zigbuild --release --target aarch64-unknown-linux-musl -p shiku -p shikud

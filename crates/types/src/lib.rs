@@ -5,7 +5,7 @@
 //! truth — the compiler enforces the contract once both sides import the same
 //! `Request`/`Response` enums.
 //!
-//! See `docs/design/shiku/deploy.md` for the full design.
+//! See `docs/deploying.md` for the full design.
 //!
 //! ## Layering
 //!
@@ -212,7 +212,7 @@ pub enum Request {
     /// `~/.config/shiku/server.toml`, installs the cloudflared
     /// systemd-user unit, and starts it.
     ///
-    /// Idempotent in both modes. See `docs/design/shiku/tunnel.md` §5.
+    /// Idempotent in both modes. See `docs/ingress.md`.
     TunnelBootstrap {
         /// How to obtain the tunnel id + runtime token.
         mode: TunnelBootstrapMode,
@@ -441,7 +441,7 @@ pub struct AppConfig {
     pub systemd: SystemdSpec,
     /// Fully-qualified hostnames this app should be reachable at. Drives
     /// the cloudflared tunnel ingress / DNS reconcile loop on the agent.
-    /// Empty when the app isn't published. See `docs/design/shiku/tunnel.md`.
+    /// Empty when the app isn't published. See `docs/ingress.md`.
     ///
     /// Defaulted (`#[serde(default)]`) so existing on-disk configs without
     /// the field continue to deserialize cleanly.
@@ -561,7 +561,7 @@ pub struct ReleaseManifest {
     pub target: String,
     /// RFC3339 build timestamp.
     pub built_at: String,
-    /// Optional builder identifier (e.g. `"damo@laptop"`).
+    /// Optional builder identifier (e.g. `"alice@laptop"`).
     pub built_by: Option<String>,
     /// Git SHA at build time.
     pub git_sha: Option<String>,
@@ -720,7 +720,7 @@ mod tests {
             package: "eternal-seas".into(),
             target: "aarch64-unknown-linux-musl".into(),
             built_at: "2026-04-29T12:00:00Z".into(),
-            built_by: Some("damo@laptop".into()),
+            built_by: Some("alice@laptop".into()),
             git_sha: Some("0192a4b3".into()),
             git_dirty: false,
             secrets: vec![SecretBinding {

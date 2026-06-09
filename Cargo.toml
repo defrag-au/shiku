@@ -5,6 +5,10 @@ resolver = "2"
 [workspace.package]
 version = "0.1.0"
 authors = ["Damon Oehlman <damon@defrag.au>"]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/defrag-au/shiku"
+homepage = "https://github.com/defrag-au/shiku"
 
 # Only the dependencies the shiku crates pull via `{ workspace = true }`.
 # Versions kept in sync with the augminted-bots workspace they were

@@ -3,7 +3,7 @@
 //! Lives in the project root. Each project that wants to deploy something
 //! has its own `shiku.toml` describing its apps and per-environment settings.
 //!
-//! See `docs/design/shiku/deploy.md` for the schema design rationale.
+//! See `docs/deploying.md` for the schema design rationale.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -84,7 +84,7 @@ pub struct EnvSection {
     pub service: Option<String>,
     /// Fully-qualified hostnames this app should be reachable at via the
     /// box's cloudflared tunnel. Validated by the agent at register time;
-    /// see `docs/design/shiku/tunnel.md` for the rules (zone must be in
+    /// see `docs/ingress.md` for the rules (zone must be in
     /// the box's `server.toml`; only single-level subdomains; not
     /// claimed by another app).
     #[serde(default)]

@@ -1,7 +1,6 @@
 //! `shiku` — deploy CLI for the Shiku service platform.
 //!
-//! See `docs/design/shiku/deploy.md` for the design and
-//! `docs/design/shiku/implementation-plan.md` for the build plan.
+//! See `docs/deploying.md` for the deploy workflow.
 
 #![forbid(unsafe_code)]
 
@@ -127,7 +126,7 @@ enum Command_ {
     },
 
     /// Manage the box's Cloudflare tunnel (for public ingress).
-    /// See `docs/design/shiku/tunnel.md`.
+    /// See `docs/ingress.md`.
     Tunnel {
         #[command(subcommand)]
         sub: TunnelSub,
@@ -215,7 +214,9 @@ enum BootstrapSub {
     Init {
         #[arg(long)]
         host: String,
-        #[arg(long, default_value = "damo")]
+        /// Admin user on the box (has sudo). Used only for the one-time
+        /// privileged setup: useradd, enable-linger, SSH key install.
+        #[arg(long)]
         admin: String,
         #[arg(long)]
         user: String,

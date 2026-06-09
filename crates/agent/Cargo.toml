@@ -1,9 +1,14 @@
 [package]
 name = "shikud"
-version = "0.1.0"
-edition = "2021"
-authors = ["Damon Oehlman <damon.oehlman@gmail.com>"]
 description = "Shiku agent — per-user box-side daemon that receives deploys"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["deploy", "shiku", "systemd", "agent"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "shikud"

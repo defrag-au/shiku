@@ -1,9 +1,14 @@
 [package]
 name = "shiku"
-version = "0.1.0"
-edition = "2021"
-authors = ["Damon Oehlman <damon.oehlman@gmail.com>"]
 description = "Shiku CLI — deploys native services from your laptop to a Shiku-managed box"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["deploy", "shiku", "cli", "systemd"]
+categories = ["command-line-utilities", "development-tools"]
 
 [[bin]]
 name = "shiku"

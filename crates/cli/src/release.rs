@@ -130,6 +130,9 @@ pub fn build_manifest(
         git_dirty,
         // Per-secret hashes go here in Phase 3 (Step 3.2). Empty for now.
         secrets: Vec::new(),
+        // Asset hashes are populated once asset collection is wired (release
+        // assets feature). Empty for now — no behaviour change.
+        assets: Vec::new(),
     }
 }
 

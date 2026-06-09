@@ -1,6 +1,52 @@
 # Design: release assets
 
-**Status:** proposed (draft)
+**Status:** in progress — foundation landed, CLI + agent remaining.
+
+## Implementation status
+
+**Done (behaviour-neutral, builds + tests green):**
+
+- `shiku-types`: `ReleaseManifest.assets: Vec<AssetBinding>` (`#[serde(default)]`)
+  + the new `AssetBinding { path, hash }` type.
+- `shiku-runtime`: `assets` module — `asset_path("…")` (checked, path-confined,
+  resolve-once) + `asset_dir()`, `RuntimeError::{Asset, MissingAsset}`,
+  re-exported. Unit-tested.
+- All current call sites build assets-empty, so nothing changes at runtime yet.
+
+**Remaining — one coupled change** (the release sha and the agent's verify must
+move together; see below):
+
+1. **CLI `config`:** `assets: Vec<String>` on `AppSection` + `ResolvedApp`;
+   thread the project root (dir of `shiku.toml`, from `Config::load`) into
+   `ResolvedApp` via `load_and_resolve` so globs resolve against it.
+2. **CLI `release`:**
+   - `collect_assets(project_root, &globs)` — glob, **reject symlinks**, enforce
+     the §7 quotas (25 MiB/file, 20,000 files, warn 64 / fail 256 MiB total).
+   - `asset_bindings(&files)` — sha each → `Vec<AssetBinding>`, sorted by path.
+   - `release_sha(binary_sha, &bindings)` = `sha256(binary_sha ‖ canonical)`,
+     where `canonical` = the sorted `"{path}\n{hash}\n"` lines.
+   - `rsync_assets` — stage into a temp dir mirroring rel paths, one rsync to
+     `releases/<sha>/assets/`.
+   - `build_manifest` gains `assets` **and `binary_sha`** (see §coupling).
+3. **CLI `build_and_upload`:** collect assets → compute the **combined**
+   `release_sha` → use it for the present-check, rsync dest, and manifest. rsync
+   the asset tree when non-empty.
+4. **Agent `releases::verify_and_finalize`:** today it re-hashes the binary and
+   compares to `manifest.sha`. Once `sha` is the *combined* hash that no longer
+   holds — so the manifest must also carry **`binary_sha`** (the raw binary
+   hash). Verify: `hash(binary) == manifest.binary_sha`; each
+   `hash(assets/<path>) == manifest.assets[i].hash`; and
+   `release_sha(binary_sha, assets) == manifest.sha`.
+5. **Agent `activate`:** after the working-dir step, when the release manifest
+   has assets, add `Environment=SHIKU_ASSETS_DIR=<app_root>/current/assets` to
+   the rendered unit (the manifest is already re-read here for secrets).
+
+> **The coupling:** steps 3 (CLI sets `sha = combined`) and 4 (agent verifies
+> against `binary_sha`, not `sha`) must land together — shipping 3 without 4
+> would make every deploy fail verification. Hence `binary_sha` is added to the
+> manifest as part of this change.
+
+
 
 Let a service ship companion data files — config, templates, reference images,
 static content — *as part of its release*, so those files version, activate,

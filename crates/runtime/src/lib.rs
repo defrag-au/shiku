@@ -30,6 +30,7 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+pub mod assets;
 pub mod bindings;
 pub mod listen;
 pub mod manifest;
@@ -42,6 +43,7 @@ pub mod health;
 #[cfg(feature = "axum")]
 pub mod shutdown;
 
+pub use assets::{asset_dir, asset_path};
 pub use manifest::{Manifest, Need, SHIKU_NEEDS};
 
 // Re-export hidden support module for macro expansions. The `shiku-macros`
@@ -82,6 +84,22 @@ pub enum RuntimeError {
     MissingSecret {
         /// The secret name (matches the env var name).
         name: String,
+    },
+
+    /// A declared asset path was malformed or escaped the asset directory.
+    #[error("asset '{path}': {detail}")]
+    Asset {
+        /// The release-relative asset path that was requested.
+        path: String,
+        /// Human-readable explanation.
+        detail: String,
+    },
+
+    /// A requested asset file does not exist in the active release.
+    #[error("missing asset '{path}': not found in the release (is it declared under `assets` in shiku.toml?)")]
+    MissingAsset {
+        /// The release-relative asset path that was requested.
+        path: String,
     },
 }
 

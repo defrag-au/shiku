@@ -579,6 +579,15 @@ pub struct ReleaseManifest {
     /// Hashes of allowlisted secrets at deploy-prep time. The agent rejects
     /// activation if any of these have changed since the release was prepared.
     pub secrets: Vec<SecretBinding>,
+    /// Hashes of bundled release assets — read-only data files shipped inside
+    /// the release under `assets/` (declared via `assets` in `shiku.toml`).
+    /// The asset set is folded into the release sha, and the agent re-hashes
+    /// each staged file at activation, same as `secrets`.
+    ///
+    /// `#[serde(default)]` so manifests written before this field existed
+    /// (and releases with no assets) deserialize cleanly.
+    #[serde(default)]
+    pub assets: Vec<AssetBinding>,
 }
 
 /// A secret reference within a [`ReleaseManifest`]. The agent compares
@@ -589,6 +598,17 @@ pub struct ReleaseManifest {
 pub struct SecretBinding {
     pub name: SecretName,
     /// Hex-encoded SHA-256 of the secret value at deploy-prep time.
+    pub hash: String,
+}
+
+/// An asset file within a [`ReleaseManifest`] — its release-relative path and
+/// content hash. The agent re-hashes the staged file at activation and rejects
+/// a mismatch, the same integrity check applied to the binary and secrets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetBinding {
+    /// Path relative to the release's `assets/` directory, forward-slashed.
+    pub path: String,
+    /// Hex-encoded SHA-256 of the file bytes.
     pub hash: String,
 }
 
@@ -735,12 +755,17 @@ mod tests {
                 name: "BOT_TOKEN".into(),
                 hash: "sha256:deadbeef".into(),
             }],
+            assets: vec![AssetBinding {
+                path: "projects/aliens-polaroid/project.toml".into(),
+                hash: "sha256:c0ffee".into(),
+            }],
         };
 
         let buf: Vec<u8> = postcard::to_allocvec(&manifest).expect("encode");
         let decoded: ReleaseManifest = postcard::from_bytes(&buf).expect("decode");
         assert_eq!(decoded.sha, "abc123");
         assert_eq!(decoded.secrets.len(), 1);
+        assert_eq!(decoded.assets.len(), 1);
         assert_eq!(decoded.secrets[0].name, "BOT_TOKEN");
     }
 

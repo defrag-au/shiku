@@ -31,8 +31,9 @@ RUST_LOG = "info"               # plain (non-secret) environment variables
 # Optional. Defaults to a process health check for non-listen apps.
 
 [apps.my-service.env.prod.systemd]
-memory_max        = "512M"      # optional systemd unit overrides
-cpu_quota_percent = 80
+memory_max        = "512M"      # override the default MemoryMax backstop
+cpu_quota_percent = 80          # CPUQuota=80% (opt-in; unset by default)
+tasks_max         = 512         # override the default TasksMax backstop
 restart           = "on-failure"
 restart_sec       = 5
 ```
@@ -132,3 +133,33 @@ whether the app declared `listen_http!()`:
 
 Either way, the health check is the gate: pass and the deploy stands; fail and
 the agent rolls back. See [Operations](operations.md) for the day-to-day flow.
+
+## Hardening defaults
+
+The systemd unit the agent renders is sandboxed by default, tuned for a
+network-egress service (the typical Shiku workload, e.g. a Discord bot). You get
+all of this without configuring anything:
+
+- **No privileges**: `NoNewPrivileges`, an empty `CapabilityBoundingSet`, no
+  ambient capabilities — Shiku allocates high ports, so a service never needs
+  `CAP_NET_BIND_SERVICE`.
+- **Filesystem**: `ProtectSystem=strict` with the working dir as the only
+  writable path, `ProtectHome=read-only`, `PrivateTmp`, `PrivateDevices`. The
+  age secret store is made *inaccessible* (`InaccessiblePaths=%h/secrets`) — a
+  service only ever sees the secrets injected into its env file, never the
+  store, so a compromised service can't read another app's secrets.
+- **Kernel & namespaces**: `ProtectKernelTunables/Modules/Logs`,
+  `ProtectControlGroups`, `ProtectClock`, `RestrictNamespaces`,
+  `RestrictRealtime`, `LockPersonality`, `MemoryDenyWriteExecute`.
+- **Syscalls**: `SystemCallFilter=@system-service` (native architectures only).
+- **Network**: `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK`
+  (AF_NETLINK is kept so DNS resolution works).
+- **Resource backstops**: `MemoryMax=50%` and `TasksMax=4096` by default — a
+  generous ceiling so one runaway service can't OOM or fork-bomb the box, not a
+  tight leash. Override per-app via the `[…systemd]` table above.
+
+Two defaults to know about: `MemoryDenyWriteExecute=yes` is safe for native Rust
+binaries but breaks anything that needs writable-executable memory (a JIT,
+embedded scripting); and the secret store being inaccessible assumes secrets
+flow through the env file (the normal path). Override the relevant directive
+with a systemd drop-in if your service is the exception.

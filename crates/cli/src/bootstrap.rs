@@ -173,6 +173,15 @@ async fn upload_agent(host: &str, service_user: &str, binary: &PathBuf) -> Resul
 
 /// Write the systemd-user unit, daemon-reload, enable, start.
 async fn user_setup(host: &str, service_user: &str) -> Result<()> {
+    // The agent is the highest-value target on the box (it owns the secret
+    // store, the control socket, and every release), so its own unit is
+    // hardened too. It can't sandbox its home (it writes to ~/secrets,
+    // ~/apps, ~/.config/systemd, %t) and it execs child processes (systemctl,
+    // journalctl, and deployed binaries with --shiku-manifest), so it
+    // deliberately omits ProtectHome, a SystemCallFilter, and
+    // MemoryDenyWriteExecute — any of which would risk those child execs.
+    // ProtectSystem=full (not strict) keeps /usr,/boot,/etc read-only while
+    // leaving /home and /run writable.
     let unit = r#"[Unit]
 Description=Shiku agent for %u
 After=default.target
@@ -182,6 +191,31 @@ Type=simple
 ExecStart=%h/.local/bin/shikud
 Restart=on-failure
 RestartSec=5
+
+# Hardening (Shiku defaults)
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+UMask=0077
+
+# Resource limits
+MemoryMax=25%
+TasksMax=4096
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=shikud

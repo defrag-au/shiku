@@ -529,16 +529,25 @@ fn default_health_expect_status() -> Vec<u16> {
     vec![200, 204]
 }
 
-/// systemd unit overrides. The agent generates units with hardening defaults
-/// (NoNewPrivileges, PrivateTmp, ProtectSystem=strict, etc.); these fields
-/// override the per-app knobs that vary in practice.
+/// systemd unit overrides. The agent generates units with a hardening +
+/// resource-backstop baseline (NoNewPrivileges, ProtectSystem=strict, a
+/// dropped capability set, a generous `MemoryMax`/`TasksMax`, etc.); these
+/// fields override the per-app knobs that vary in practice.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SystemdSpec {
-    /// E.g. `"512M"`, `"2G"`. Maps to systemd's `MemoryMax=`.
+    /// E.g. `"512M"`, `"2G"`, or a percentage like `"50%"`. Maps to systemd's
+    /// `MemoryMax=`. When unset the agent applies a generous default backstop
+    /// so one runaway service can't OOM the whole box.
     pub memory_max: Option<String>,
-    /// Percentage as integer, e.g. `100` for 100% of one core. Maps to `CPUQuota=`.
+    /// Percentage as integer, e.g. `100` for 100% of one core. Maps to
+    /// `CPUQuota=`. Left unset by default (CPU starvation is self-limiting and
+    /// a default quota risks throttling legitimate bursts).
     pub cpu_quota_percent: Option<u32>,
-    /// systemd `Restart=` value (default `"always"`).
+    /// Max number of tasks (threads + processes). Maps to `TasksMax=`. When
+    /// unset the agent applies a generous default to guard against fork/thread
+    /// runaways.
+    pub tasks_max: Option<u32>,
+    /// systemd `Restart=` value (default `"on-failure"`).
     pub restart: Option<String>,
     /// systemd `RestartSec=` (default `10`).
     pub restart_sec: Option<u32>,
@@ -695,8 +704,7 @@ mod tests {
             systemd: SystemdSpec {
                 memory_max: Some("512M".into()),
                 cpu_quota_percent: Some(100),
-                restart: None,
-                restart_sec: None,
+                ..Default::default()
             },
             public: vec!["norn.augminted.cc".into()],
         };

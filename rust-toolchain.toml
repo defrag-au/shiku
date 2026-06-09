@@ -1,0 +1,8 @@
+# Toolchain for building Shiku, including the cross-compile target the CLI
+# uses to build service binaries for the box. Picked up automatically by
+# rustup (non-nix users) and by the flake devshell (which reads this file).
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-unknown-linux-musl"]
+profile = "minimal"

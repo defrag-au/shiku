@@ -69,8 +69,8 @@ service says, in code:
 async fn main() -> anyhow::Result<()> {
     shiku_runtime::init();
 
-    let token = shiku::secret!("BOT_TOKEN");   // declared + resolved
-    let addr  = shiku::listen_http!();          // a port, allocated for you
+    let token = shiku_runtime::secret!("BOT_TOKEN")?;   // declared + resolved
+    let addr  = shiku_runtime::listen_http!()?;          // a port, allocated for you
     // …
 }
 ```
@@ -151,6 +151,7 @@ name can be omitted when `shiku.toml` defines exactly one app.
 | Guide | Covers |
 | --- | --- |
 | [Getting started](docs/getting-started.md) | Install, bootstrap a box, first deploy. |
+| [Deploying a new service](docs/deploying-a-new-service.md) | Add a new bot/service to an existing box (incl. the per-user decision). |
 | [Deploying services](docs/deploying.md) | `shiku.toml`, declaring needs, the deploy flow. |
 | [Secrets](docs/secrets.md) | Encrypted-at-rest secrets, rotation. |
 | [Public ingress](docs/ingress.md) | Cloudflare Tunnel, public hostnames. |
@@ -159,7 +160,17 @@ name can be omitted when `shiku.toml` defines exactly one app.
 
 ## Development
 
-Requires a recent stable Rust toolchain.
+The repo ships a Nix flake devshell with everything needed (rust + the
+`aarch64-unknown-linux-musl` target, `cargo-zigbuild`, `zig`, `just`, `rsync`):
+
+```sh
+direnv allow          # if you use direnv
+# or:
+nix develop           # drop into the devshell
+```
+
+Not using Nix? `rust-toolchain.toml` pins the toolchain + cross target for
+rustup; you'll also need `cargo install cargo-zigbuild` and a system `zig`.
 
 ```sh
 just check    # cargo check the workspace

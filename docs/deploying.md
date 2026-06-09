@@ -57,9 +57,9 @@ anything dynamic at compile time, because the manifest is built from these
 literals.
 
 ```rust
-let token = shiku::secret!("BOT_TOKEN");   // inject this secret
-let url   = shiku::binding!("narrator");    // resolve the URL of the 'narrator' app
-let addr  = shiku::listen_http!();           // allocate an HTTP listen port
+let token = shiku_runtime::secret!("BOT_TOKEN")?;   // inject this secret
+let url   = shiku_runtime::binding!("narrator")?;    // resolve the URL of the 'narrator' app
+let addr  = shiku_runtime::listen_http!()?;           // allocate an HTTP listen port
 ```
 
 Each macro registers the need into a compile-time-aggregated list **and** emits
@@ -72,7 +72,7 @@ the runtime call that uses it. The binary can then print the full set with:
 `shiku_runtime::init()`, called at the top of `main`, handles that flag (and
 sets up tracing). At deploy time the agent runs your binary with
 `--shiku-manifest`, reads the manifest, and provisions exactly what it asks for.
-Add a `shiku::secret!("NEW_TOKEN")` and redeploy, and the agent injects
+Add a `shiku_runtime::secret!("NEW_TOKEN")` and redeploy, and the agent injects
 `NEW_TOKEN` automatically — provided you've [stored its value](secrets.md). The
 code change *is* the config change; the two can't drift.
 

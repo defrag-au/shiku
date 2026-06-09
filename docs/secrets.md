@@ -69,7 +69,7 @@ shiku env my-service
 ## Allowlist enforcement
 
 Each app receives only the secrets it declares. The allowlist is populated
-automatically from the [manifest](deploying.md) — `shiku::secret!("BOT_TOKEN")`
+automatically from the [manifest](deploying.md) — `shiku_runtime::secret!("BOT_TOKEN")`
 in your code puts `BOT_TOKEN` in the app's allowlist. A secret stored on the box
 but absent from an app's allowlist is never decrypted or injected for that app.
 A secret *in* the allowlist but missing from storage fails activation fast,

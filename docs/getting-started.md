@@ -56,6 +56,13 @@ Upgrading the agent later needs no privileged steps:
 shiku bootstrap upgrade --host my-box --user <service-user>
 ```
 
+> `bootstrap upgrade` swaps the agent binary but does **not** re-render the unit
+> files of services already deployed — a service keeps its existing unit until
+> its next activation. So after upgrading the agent to pick up new systemd
+> hardening defaults, re-activate each running service to apply them:
+> `shiku deploy <app>` (rebuild) or `shiku release activate <app> --sha <current>`
+> (re-render + restart the existing release, no rebuild).
+
 ## 3. Describe your app
 
 Create a `shiku.toml` at your project root. The CLI searches upward for it, so
@@ -91,8 +98,8 @@ shiku-runtime = { git = "https://github.com/defrag-au/shiku" }
 async fn main() -> anyhow::Result<()> {
     shiku_runtime::init();                 // handles --shiku-manifest + tracing
 
-    let token = shiku::secret!("BOT_TOKEN");   // injected at activation
-    let addr  = shiku::listen_http!();          // a port, allocated for you
+    let token = shiku_runtime::secret!("BOT_TOKEN")?;   // injected at activation
+    let addr  = shiku_runtime::listen_http!()?;          // a port, allocated for you
 
     // ... start your server bound to `addr` ...
     Ok(())

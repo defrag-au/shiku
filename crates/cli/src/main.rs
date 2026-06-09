@@ -1331,6 +1331,7 @@ fn print_resolved(r: &ResolvedApp) {
     println!("health:        {:?}", r.health);
     if r.systemd.memory_max.is_some()
         || r.systemd.cpu_quota_percent.is_some()
+        || r.systemd.tasks_max.is_some()
         || r.systemd.restart.is_some()
         || r.systemd.restart_sec.is_some()
     {
@@ -1340,6 +1341,9 @@ fn print_resolved(r: &ResolvedApp) {
         }
         if let Some(c) = r.systemd.cpu_quota_percent {
             println!("  cpu_quota_percent = {c}");
+        }
+        if let Some(t) = r.systemd.tasks_max {
+            println!("  tasks_max = {t}");
         }
         if let Some(r2) = &r.systemd.restart {
             println!("  restart = {r2}");

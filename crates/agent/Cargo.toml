@@ -1,0 +1,71 @@
+[package]
+name = "shikud"
+version = "0.1.0"
+edition = "2021"
+authors = ["Damon Oehlman <damon.oehlman@gmail.com>"]
+description = "Shiku agent — per-user box-side daemon that receives deploys"
+
+[[bin]]
+name = "shikud"
+path = "src/main.rs"
+
+[dependencies]
+shiku-types = { path = "../types" }
+
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+postcard = { workspace = true, features = ["alloc"] }
+toml = { workspace = true }
+
+tokio = { workspace = true, features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+    "io-util",
+    "fs",
+    "process",
+    "signal",
+    "time",
+] }
+
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Secrets layer (used in Phase 3, but pulled in early so the agent's
+# dependency graph stabilises before code that needs them is written).
+age = "0.10"
+secrecy = "0.10"
+zeroize = "1"
+
+# Atomic file writes
+tempfile = "3"
+
+# Release verification (Step 2.4) — agent recomputes SHA-256 to validate
+# what the CLI uploaded matches the manifest.
+sha2 = "0.10"
+hex = "0.4"
+
+# RFC3339 timestamp formatting for status reporting
+humantime = { workspace = true }
+
+# Cloudflare API client (Phase 2 of the tunnel design).
+# `workspace = true` picks up `default-features = false` from the
+# workspace; we re-enable only the features we need. Keep features
+# minimal to avoid pulling native-tls into the agent's dep graph (cargo
+# unifies features across the whole workspace).
+reqwest = { workspace = true, features = ["json", "rustls-tls"] }
+
+# Reconstruct the cloudflared runtime token from CF API tunnel-create
+# response (base64({a: account_tag, t: tunnel_id, s: tunnel_secret})).
+base64 = "0.22"
+
+[dev-dependencies]
+# Serialises tests that mutate process-global state (HOME env var).
+serial_test = "3"
+
+# Unix syscalls — needed for getuid (socket path), file mode bits.
+[target.'cfg(unix)'.dependencies]
+nix = { version = "0.29", features = ["fs", "user"] }

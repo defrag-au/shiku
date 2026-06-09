@@ -1,0 +1,11 @@
+[package]
+name = "shiku-types"
+version = "0.1.0"
+edition = "2021"
+authors = ["Damon Oehlman <damon.oehlman@gmail.com>"]
+description = "Shared wire-protocol and config types for the Shiku service platform"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+postcard = { workspace = true, features = ["alloc"] }
+thiserror = { workspace = true }

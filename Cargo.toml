@@ -1,0 +1,36 @@
+[workspace]
+members = ["crates/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+authors = ["Damon Oehlman <damon@defrag.au>"]
+
+# Only the dependencies the shiku crates pull via `{ workspace = true }`.
+# Versions kept in sync with the augminted-bots workspace they were
+# extracted from. `default-features = false` on reqwest/tokio/tracing is
+# deliberate — keep native-tls (openssl) out of the agent's dep graph.
+[workspace.dependencies]
+serde = { version = "1.0.217" }
+serde_json = { version = "1.0.134" }
+postcard = "1.1.1"
+toml = "0.8"
+tokio = { version = "1.43.0", default-features = false }
+tracing = { version = "0.1.41", default-features = false, features = ["std"] }
+anyhow = "1.0"
+thiserror = "2.0"
+reqwest = { version = "0.12.15", default-features = false }
+humantime = "2.2.0"
+clap = { version = "4", features = ["derive"] }
+axum = { version = "0.7", features = ["ws"] }
+
+# Per-package overrides for the Shiku CLI + agent: keep useful backtraces
+# even in release builds. Shiku binaries are debugging tools; readable
+# stack traces are worth the few extra MB.
+[profile.release.package.shiku]
+debug = "line-tables-only"
+strip = "none"
+
+[profile.release.package.shikud]
+debug = "line-tables-only"
+strip = "none"

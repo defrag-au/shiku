@@ -1,0 +1,35 @@
+[package]
+name = "shiku-runtime"
+version = "0.1.0"
+edition = "2021"
+authors = ["Damon Oehlman <damon.oehlman@gmail.com>"]
+description = "Service-side runtime for the Shiku platform — implements the deploy contract."
+
+[dependencies]
+shiku-types = { path = "../types" }
+shiku-macros = { path = "../macros" }
+
+# Bindings / secrets / health endpoint helpers
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+secrecy = "0.10"
+zeroize = "1"
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Tracked-usage manifest: distributed_slice aggregation across the binary.
+linkme = "0.3"
+
+# Tracing init helper
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Optional axum integration. Apps that don't use axum (CLI tools, gateway
+# bots like eternal-seas) can disable this feature and use just the env-var
+# helpers.
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["signal", "macros"], optional = true }
+
+[features]
+default = ["axum"]
+axum = ["dep:axum", "dep:tokio"]

@@ -63,7 +63,10 @@ Most commands take an optional `[app]` positional. It can be omitted when
 `--admin` is the existing sudo user used only for the one-time privileged setup;
 `--user` is the service-user the agent and services run as; `--github` supplies
 the SSH keys to install. `--agent-binary` defaults to
-`target/aarch64-unknown-linux-musl/release/shikud`.
+`target/aarch64-unknown-linux-musl/release/shikud`, resolved against the
+current directory first and then against the CLI's own workspace `target/`
+dir — so running `shiku` from another repo (e.g. via a `cargo run` wrapper)
+finds the agent built in the shiku checkout without the flag.
 
 ## Tunnel (public ingress)
 

@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+# Both jobs run on the org's self-hosted ARM box (`[self-hosted, netcup-arm]`).
+# That box is aarch64 Linux — the same architecture as the deploy target — so
+# the release build is a native `aarch64-unknown-linux-musl` build and needs no
+# zig/cargo-zigbuild (rustc links it with the self-contained musl CRT).
+
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
@@ -16,7 +21,10 @@ concurrency:
 jobs:
   test:
     name: fmt · clippy · test
-    runs-on: ubuntu-latest
+    # Self-hosted: the box also serves every other org repo's checks, so a job
+    # that hangs must not occupy the sole runner indefinitely.
+    runs-on: [self-hosted, netcup-arm]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -38,8 +46,11 @@ jobs:
         run: cargo test --workspace
 
   cross-build:
+    # The name is kept so any branch protection that names this check keeps
+    # matching it; on the ARM runner this is a native build, not a cross one.
     name: cross-build (aarch64 musl)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, netcup-arm]
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -51,28 +62,9 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
-      # The CLI cross-compiles the agent with cargo-zigbuild; mirror that here
-      # so the release-target build keeps working for the agent + CLI binaries.
-      #
-      # Zig comes from the pypi `ziglang` wheel (cargo-zigbuild's documented
-      # install path — it invokes `python3 -m ziglang`). This avoids the zig
-      # release mirrors, which don't host every build. Pinned to a stable Zig
-      # release validated to cross-build this workspace.
-      - name: Install Zig (ziglang wheel)
-        run: |
-          python3 -m venv "$HOME/zigvenv"
-          "$HOME/zigvenv/bin/pip" install 'ziglang==0.15.1'
-          # Expose a `zig` executable (cargo-zigbuild's first-choice discovery).
-          printf '#!/usr/bin/env bash\nexec "%s/bin/python" -m ziglang "$@"\n' "$HOME/zigvenv" \
-            > "$HOME/zigvenv/bin/zig"
-          chmod +x "$HOME/zigvenv/bin/zig"
-          echo "$HOME/zigvenv/bin" >> "$GITHUB_PATH"
-
-      - name: Verify Zig
-        run: zig version
-
-      - name: Install cargo-zigbuild
-        run: cargo install --locked cargo-zigbuild
-
+      # The deploy target matches the runner's host architecture, so the build
+      # needs neither zig nor cargo-zigbuild: rustc links this target with the
+      # musl CRT it ships (`crt-objects-fallback: musl`), with the host `cc`
+      # only acting as the linker driver.
       - name: Build agent + CLI for the box target
-        run: cargo zigbuild --release --target aarch64-unknown-linux-musl -p shiku -p shikud
+        run: cargo build --release --target aarch64-unknown-linux-musl -p shiku -p shikud

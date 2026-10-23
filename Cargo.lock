@@ -2096,8 +2096,10 @@ dependencies = [
 name = "shiku-types"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "postcard",
  "serde",
+ "sha2",
  "thiserror 2.0.18",
 ]
 

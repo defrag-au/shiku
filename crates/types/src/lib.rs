@@ -576,9 +576,25 @@ pub struct ReleaseManifest {
     pub git_sha: Option<String>,
     /// Whether the working tree was dirty at build time.
     pub git_dirty: bool,
+    /// Raw SHA-256 of the binary alone. The release `sha` is a content hash
+    /// over the binary *and* the asset set, so the agent needs the bare binary
+    /// hash to verify the uploaded binary independently. Empty on manifests
+    /// written before assets existed (where `sha` already equals the binary
+    /// hash); the agent falls back to `sha` in that case.
+    #[serde(default)]
+    pub binary_sha: String,
     /// Hashes of allowlisted secrets at deploy-prep time. The agent rejects
     /// activation if any of these have changed since the release was prepared.
     pub secrets: Vec<SecretBinding>,
+    /// Hashes of bundled release assets — read-only data files shipped inside
+    /// the release under `assets/` (declared via `assets` in `shiku.toml`).
+    /// The asset set is folded into the release sha, and the agent re-hashes
+    /// each staged file at activation, same as `secrets`.
+    ///
+    /// `#[serde(default)]` so manifests written before this field existed
+    /// (and releases with no assets) deserialize cleanly.
+    #[serde(default)]
+    pub assets: Vec<AssetBinding>,
 }
 
 /// A secret reference within a [`ReleaseManifest`]. The agent compares
@@ -590,6 +606,44 @@ pub struct SecretBinding {
     pub name: SecretName,
     /// Hex-encoded SHA-256 of the secret value at deploy-prep time.
     pub hash: String,
+}
+
+/// An asset file within a [`ReleaseManifest`] — its release-relative path and
+/// content hash. The agent re-hashes the staged file at activation and rejects
+/// a mismatch, the same integrity check applied to the binary and secrets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssetBinding {
+    /// Path relative to the release's `assets/` directory, forward-slashed.
+    pub path: String,
+    /// Hex-encoded SHA-256 of the file bytes.
+    pub hash: String,
+}
+
+/// The canonical release identity: a content hash over the binary **and** its
+/// bundled assets. Defined here so the CLI (which sets it) and the agent (which
+/// re-verifies it) compute it the same way — drift between the two would make
+/// every deploy fail verification.
+///
+/// With no assets it is exactly the binary hash, so asset-less services keep
+/// their existing content-addressed shas. With assets, it folds in a canonical,
+/// path-sorted `(path, hash)` list so an asset-only change yields a new release.
+pub fn release_sha(binary_sha: &str, assets: &[AssetBinding]) -> String {
+    use sha2::{Digest, Sha256};
+    if assets.is_empty() {
+        return binary_sha.to_string();
+    }
+    let mut sorted: Vec<&AssetBinding> = assets.iter().collect();
+    sorted.sort_by(|a, b| a.path.cmp(&b.path));
+    let mut hasher = Sha256::new();
+    hasher.update(binary_sha.as_bytes());
+    hasher.update(b"\n");
+    for a in sorted {
+        hasher.update(a.path.as_bytes());
+        hasher.update(b"\n");
+        hasher.update(a.hash.as_bytes());
+        hasher.update(b"\n");
+    }
+    hex::encode(hasher.finalize())
 }
 
 /// Read-only view of a release on disk. Returned by [`Request::ReleaseList`].
@@ -731,9 +785,14 @@ mod tests {
             built_by: Some("alice@laptop".into()),
             git_sha: Some("0192a4b3".into()),
             git_dirty: false,
+            binary_sha: "deadbeefbinary".into(),
             secrets: vec![SecretBinding {
                 name: "BOT_TOKEN".into(),
                 hash: "sha256:deadbeef".into(),
+            }],
+            assets: vec![AssetBinding {
+                path: "projects/aliens-polaroid/project.toml".into(),
+                hash: "sha256:c0ffee".into(),
             }],
         };
 
@@ -741,12 +800,44 @@ mod tests {
         let decoded: ReleaseManifest = postcard::from_bytes(&buf).expect("decode");
         assert_eq!(decoded.sha, "abc123");
         assert_eq!(decoded.secrets.len(), 1);
+        assert_eq!(decoded.assets.len(), 1);
         assert_eq!(decoded.secrets[0].name, "BOT_TOKEN");
     }
 
     #[test]
     fn protocol_version_is_present() {
         assert_eq!(PROTOCOL_VERSION, 1);
+    }
+
+    #[test]
+    fn release_sha_no_assets_is_binary_sha() {
+        assert_eq!(release_sha("binhash", &[]), "binhash");
+    }
+
+    #[test]
+    fn release_sha_with_assets_is_stable_and_order_independent() {
+        let a = AssetBinding {
+            path: "a.toml".into(),
+            hash: "11".into(),
+        };
+        let b = AssetBinding {
+            path: "b.png".into(),
+            hash: "22".into(),
+        };
+        let forward = release_sha("bin", std::slice::from_ref(&a));
+        // Same inputs → same sha, regardless of declared order (sorted inside).
+        let s1 = release_sha("bin", &[a.clone(), b.clone()]);
+        let s2 = release_sha("bin", &[b.clone(), a.clone()]);
+        assert_eq!(s1, s2);
+        // Differs from the binary hash and from a different asset set.
+        assert_ne!(s1, "bin");
+        assert_ne!(s1, forward);
+        // A changed asset hash changes the release sha.
+        let b2 = AssetBinding {
+            path: "b.png".into(),
+            hash: "99".into(),
+        };
+        assert_ne!(s1, release_sha("bin", &[a, b2]));
     }
 
     #[test]

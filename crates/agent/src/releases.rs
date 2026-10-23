@@ -87,14 +87,51 @@ pub fn verify_and_finalize(
     // actually on disk.
     let actual = hash_file_blocking(&binary_path)
         .with_context(|| format!("hashing {}", binary_path.display()))?;
-    if actual != manifest.sha {
+    // The release `sha` is a content hash over the binary AND its assets, so
+    // verify the binary against the manifest's bare `binary_sha`. Legacy
+    // manifests (written before assets existed) have an empty `binary_sha` and
+    // a `sha` that *is* the binary hash — fall back to that.
+    let expected_binary = if manifest.binary_sha.is_empty() {
+        &manifest.sha
+    } else {
+        &manifest.binary_sha
+    };
+    if &actual != expected_binary {
         // Remove the staged binary so a corrupted upload doesn't sit around
         // pretending to be a valid release.
         let _ = std::fs::remove_dir_all(&dir);
         bail!(
             "binary hash mismatch: manifest says '{}', actual is '{}'",
-            manifest.sha,
+            expected_binary,
             actual
+        );
+    }
+
+    // Verify each bundled asset against its manifest hash.
+    for a in &manifest.assets {
+        let asset_path = dir.join("assets").join(&a.path);
+        let got = hash_file_blocking(&asset_path)
+            .with_context(|| format!("hashing asset {}", a.path))?;
+        if got != a.hash {
+            let _ = std::fs::remove_dir_all(&dir);
+            bail!(
+                "asset hash mismatch for '{}': manifest '{}', actual '{}'",
+                a.path,
+                a.hash,
+                got
+            );
+        }
+    }
+
+    // Recompute the combined release sha (binary + assets) and confirm it
+    // matches the manifest — the same canonical function the CLI used to mint it.
+    let recomputed = shiku_types::release_sha(&actual, &manifest.assets);
+    if recomputed != manifest.sha {
+        let _ = std::fs::remove_dir_all(&dir);
+        bail!(
+            "release sha mismatch: recomputed '{}', manifest '{}'",
+            recomputed,
+            manifest.sha
         );
     }
 

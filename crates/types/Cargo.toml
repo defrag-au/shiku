@@ -14,3 +14,6 @@ categories = ["config", "development-tools"]
 serde = { workspace = true, features = ["derive"] }
 postcard = { workspace = true, features = ["alloc"] }
 thiserror = { workspace = true }
+# Canonical release-sha computation (binary + assets), shared by CLI + agent.
+sha2 = "0.10"
+hex = "0.4"

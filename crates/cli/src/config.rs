@@ -61,6 +61,12 @@ pub struct AppSection {
     #[serde(default)]
     #[allow(dead_code)]
     pub listen: Option<ListenSpec>,
+    /// Read-only data files bundled into the release under `assets/` and
+    /// exposed to the service via `shiku_runtime::asset_path`. Each entry is a
+    /// path relative to this `shiku.toml`; directories are included
+    /// recursively. Symlinks are rejected.
+    #[serde(default)]
+    pub assets: Vec<String>,
     /// Per-environment configuration. Must contain at least one entry.
     pub env: BTreeMap<String, EnvSection>,
 }
@@ -122,6 +128,12 @@ pub struct ResolvedApp {
     pub listen: Option<ListenSpec>,
     pub health: HealthSpec,
     pub systemd: SystemdSpec,
+    /// Asset paths/dirs (relative to `project_root`) to bundle into the release.
+    pub assets: Vec<String>,
+    /// Directory containing the `shiku.toml` — the base for resolving `assets`.
+    /// Populated by `load_and_resolve` (which has the config path); the bare
+    /// `resolve` leaves it empty.
+    pub project_root: PathBuf,
 }
 
 impl Config {
@@ -227,6 +239,9 @@ impl Config {
             listen: app.listen.clone(),
             health,
             systemd: env.systemd.clone(),
+            assets: app.assets.clone(),
+            // Filled in by load_and_resolve, which has the config file path.
+            project_root: PathBuf::new(),
         })
     }
 }
@@ -254,6 +269,8 @@ impl ResolvedApp {
             listen: None,
             health: HealthSpec::Process { settle_secs: 10 },
             systemd: SystemdSpec::default(),
+            assets: Vec::new(),
+            project_root: PathBuf::new(),
         }
     }
 

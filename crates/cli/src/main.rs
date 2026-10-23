@@ -508,7 +508,13 @@ fn load_and_resolve(
 ) -> Result<ResolvedApp> {
     let (path, cfg) = Config::load(config_path).context("loading shiku.toml")?;
     tracing::debug!(config = %path.display(), "loaded config");
-    cfg.resolve(app, env).context("resolving app/env")
+    let mut resolved = cfg.resolve(app, env).context("resolving app/env")?;
+    // Asset globs resolve relative to the directory holding shiku.toml.
+    resolved.project_root = path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    Ok(resolved)
 }
 
 /// Send a `Ping` to the agent over SSH and print the response.
@@ -631,10 +637,18 @@ async fn cmd_release_upload(resolved: &ResolvedApp) -> Result<()> {
 async fn build_and_upload(resolved: &ResolvedApp) -> Result<String> {
     let binary = release::build(resolved).await.context("build failed")?;
 
-    let sha = release::hash_file(&binary.path)
+    let binary_sha = release::hash_file(&binary.path)
         .await
         .context("hashing built binary")?;
-    tracing::info!(sha = %sha, "computed release sha");
+    // Collect + hash declared assets; the release sha covers binary + assets,
+    // so an asset-only change yields a new (rollback-able) release.
+    let assets = release::collect_assets(&resolved.project_root, &resolved.assets)
+        .context("collecting assets")?;
+    let asset_bindings = release::asset_bindings(&assets)
+        .await
+        .context("hashing assets")?;
+    let sha = shiku_types::release_sha(&binary_sha, &asset_bindings);
+    tracing::info!(sha = %sha, assets = assets.len(), "computed release sha");
 
     if release_already_present(resolved, &sha).await? {
         tracing::info!(sha = %sha, "release already on box; skipping rsync + verify");
@@ -643,11 +657,15 @@ async fn build_and_upload(resolved: &ResolvedApp) -> Result<String> {
 
     let workspace_root = release::workspace_root().context("locating workspace root")?;
     let (git_sha, git_dirty) = release::git_state(&workspace_root).await;
-    let manifest = release::build_manifest(&sha, &binary, git_sha, git_dirty);
+    let manifest =
+        release::build_manifest(&sha, &binary_sha, &binary, git_sha, git_dirty, asset_bindings);
 
     release::rsync_to_box(&binary, resolved, &sha)
         .await
         .context("rsync upload failed")?;
+    release::rsync_assets_to_box(&assets, resolved, &sha)
+        .await
+        .context("rsync assets failed")?;
 
     let response = ssh::request_one(
         resolved,
@@ -1355,7 +1373,35 @@ fn print_resolved(r: &ResolvedApp) {
 }
 
 fn default_agent_binary() -> PathBuf {
-    PathBuf::from("target/aarch64-unknown-linux-musl/release/shikud")
+    const AGENT_REL: &str = "target/aarch64-unknown-linux-musl/release/shikud";
+
+    // CWD-relative first — the original behaviour for running from the
+    // shiku repo root.
+    let cwd_candidate = PathBuf::from(AGENT_REL);
+    if cwd_candidate.is_file() {
+        return cwd_candidate;
+    }
+
+    // Otherwise resolve relative to the CLI's own target dir: when the CLI
+    // runs out of the shiku workspace (e.g. via a `cargo run` wrapper from
+    // some other directory), the executable sits at
+    // <workspace>/target/<...>/shiku, so walk up to `target` and look for
+    // the cross-compiled agent beside it.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(target_dir) = exe
+            .ancestors()
+            .find(|p| p.file_name() == Some(std::ffi::OsStr::new("target")))
+        {
+            let candidate = target_dir.join("aarch64-unknown-linux-musl/release/shikud");
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+
+    // Neither exists — return the CWD-relative default so the caller's
+    // "not found at <path>; run cargo zigbuild..." error stays accurate.
+    cwd_candidate
 }
 
 fn init_tracing() {

@@ -244,6 +244,17 @@ async fn activate_inner(
         }
     }
 
+    // Expose the release's bundled assets (if any) as SHIKU_ASSETS_DIR. Points
+    // at the `current` symlink so the path stays valid across activations; the
+    // runtime resolves it to the concrete release once at startup.
+    if release_dir.join("assets").is_dir() {
+        let app_root = app_root(app)?;
+        resolved_bindings.push((
+            "SHIKU_ASSETS_DIR".to_string(),
+            format!("{}/current/assets", app_root.display()),
+        ));
+    }
+
     // 3. Resolve allowlisted secrets.
     let resolved_secrets =
         secrets::resolve_for_app(&config.secrets).context("resolving allowlisted secrets")?;

@@ -15,9 +15,17 @@ use std::process::Stdio;
 
 use anyhow::{anyhow, bail, Context, Result};
 use sha2::{Digest, Sha256};
-use shiku_types::ReleaseManifest;
+use shiku_types::{AssetBinding, ReleaseManifest};
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+
+// Asset quotas. Per-file size and file count align with Cloudflare Workers
+// Static Assets; the total caps are shiku-specific (a box retains several
+// releases on one disk, unlike an ephemeral Worker).
+const MAX_ASSET_FILE_BYTES: u64 = 25 * 1024 * 1024;
+const MAX_ASSET_FILES: usize = 20_000;
+const WARN_ASSET_TOTAL_BYTES: u64 = 64 * 1024 * 1024;
+const FAIL_ASSET_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 
 use crate::config::ResolvedApp;
 
@@ -111,9 +119,11 @@ pub async fn hash_file(path: &Path) -> Result<String> {
 /// Build the release manifest.
 pub fn build_manifest(
     sha: &str,
+    binary_sha: &str,
     binary: &BuiltBinary,
     git_sha: Option<String>,
     git_dirty: bool,
+    assets: Vec<AssetBinding>,
 ) -> ReleaseManifest {
     let built_at = humantime::format_rfc3339_seconds(std::time::SystemTime::now()).to_string();
     let built_by = std::env::var("USER")
@@ -128,12 +138,188 @@ pub fn build_manifest(
         built_by,
         git_sha,
         git_dirty,
+        binary_sha: binary_sha.to_string(),
         // Per-secret hashes go here in Phase 3 (Step 3.2). Empty for now.
         secrets: Vec::new(),
-        // Asset hashes are populated once asset collection is wired (release
-        // assets feature). Empty for now — no behaviour change.
-        assets: Vec::new(),
+        assets,
     }
+}
+
+/// One collected asset file: absolute source path + its release-relative path
+/// (forward-slashed, used both as the upload destination and the manifest key).
+pub struct AssetFile {
+    pub abs: PathBuf,
+    pub rel: String,
+}
+
+/// Collect the declared asset entries relative to `project_root`: each entry is
+/// a file or a directory (walked recursively). Symlinks are rejected, and the
+/// per-file / file-count / total-size quotas are enforced.
+pub fn collect_assets(project_root: &Path, entries: &[String]) -> Result<Vec<AssetFile>> {
+    let mut out = Vec::new();
+    for entry in entries {
+        let rel = entry.trim().trim_matches('/');
+        if rel.is_empty() || rel.split('/').any(|c| c == "..") {
+            bail!("invalid asset entry '{entry}': must be a relative path with no `..`");
+        }
+        let abs = project_root.join(rel);
+        let meta = std::fs::symlink_metadata(&abs)
+            .with_context(|| format!("asset '{entry}' not found at {}", abs.display()))?;
+        let ft = meta.file_type();
+        if ft.is_symlink() {
+            bail!("asset '{entry}' is a symlink — symlinks are not bundled into releases");
+        } else if ft.is_dir() {
+            walk_assets(rel, &abs, &mut out)?;
+        } else if ft.is_file() {
+            out.push(AssetFile {
+                abs,
+                rel: rel.to_string(),
+            });
+        }
+    }
+    out.sort_by(|a, b| a.rel.cmp(&b.rel));
+    enforce_asset_quotas(&out)?;
+    Ok(out)
+}
+
+fn walk_assets(rel_dir: &str, abs_dir: &Path, out: &mut Vec<AssetFile>) -> Result<()> {
+    for entry in std::fs::read_dir(abs_dir)
+        .with_context(|| format!("reading asset dir {}", abs_dir.display()))?
+    {
+        let entry = entry?;
+        // `file_type()` does not traverse symlinks — exactly what we want.
+        let ft = entry.file_type()?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let rel = format!("{rel_dir}/{name}");
+        if ft.is_symlink() {
+            bail!("asset path contains a symlink ({rel}) — symlinks are not bundled");
+        } else if ft.is_dir() {
+            walk_assets(&rel, &entry.path(), out)?;
+        } else if ft.is_file() {
+            out.push(AssetFile {
+                abs: entry.path(),
+                rel,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn enforce_asset_quotas(files: &[AssetFile]) -> Result<()> {
+    if files.len() > MAX_ASSET_FILES {
+        bail!(
+            "{} asset files exceeds the {MAX_ASSET_FILES}-file limit",
+            files.len()
+        );
+    }
+    let mib = |b: u64| b as f64 / (1024.0 * 1024.0);
+    let mut total = 0u64;
+    for f in files {
+        let sz = std::fs::metadata(&f.abs)
+            .with_context(|| format!("statting asset {}", f.rel))?
+            .len();
+        if sz > MAX_ASSET_FILE_BYTES {
+            bail!(
+                "asset '{}' is {:.1} MiB, over the {} MiB per-file limit",
+                f.rel,
+                mib(sz),
+                MAX_ASSET_FILE_BYTES / (1024 * 1024)
+            );
+        }
+        total += sz;
+    }
+    if total > FAIL_ASSET_TOTAL_BYTES {
+        bail!(
+            "assets total {:.1} MiB, over the {} MiB per-release limit",
+            mib(total),
+            FAIL_ASSET_TOTAL_BYTES / (1024 * 1024)
+        );
+    }
+    if total > WARN_ASSET_TOTAL_BYTES {
+        tracing::warn!(
+            "assets total {:.1} MiB (soft limit {} MiB) — large asset sets slow \
+             every deploy and are retained across several releases",
+            mib(total),
+            WARN_ASSET_TOTAL_BYTES / (1024 * 1024)
+        );
+    }
+    Ok(())
+}
+
+/// Hash each collected asset into a sorted [`AssetBinding`] list (the manifest
+/// asset set). `files` is assumed already sorted by `rel`.
+pub async fn asset_bindings(files: &[AssetFile]) -> Result<Vec<AssetBinding>> {
+    let mut out = Vec::with_capacity(files.len());
+    for f in files {
+        let hash = hash_file(&f.abs)
+            .await
+            .with_context(|| format!("hashing asset {}", f.rel))?;
+        out.push(AssetBinding {
+            path: f.rel.clone(),
+            hash,
+        });
+    }
+    Ok(out)
+}
+
+/// rsync the collected asset files to `<host>:~/apps/<app>/releases/<sha>/assets/`,
+/// preserving their relative paths. Stages into a temp tree first so a single
+/// rsync transfers the whole set.
+pub async fn rsync_assets_to_box(
+    files: &[AssetFile],
+    resolved: &ResolvedApp,
+    sha: &str,
+) -> Result<()> {
+    if files.is_empty() {
+        return Ok(());
+    }
+    let staging = std::env::temp_dir().join(format!("shiku-assets-{}-{sha}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&staging);
+    for f in files {
+        let dest = staging.join(&f.rel);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("staging {}", parent.display()))?;
+        }
+        std::fs::copy(&f.abs, &dest)
+            .with_context(|| format!("staging asset {}", f.rel))?;
+    }
+
+    let dest = format!(
+        "{user}@{host}:apps/{app}/releases/{sha}/assets/",
+        user = resolved.ssh_user,
+        host = resolved.deploy_host,
+        app = resolved.app_name,
+        sha = sha,
+    );
+    let src = format!("{}/", staging.display()); // trailing slash → copy contents
+
+    tracing::info!(files = files.len(), dest = %dest, "uploading assets via rsync");
+
+    let result = Command::new("rsync")
+        .arg("-e")
+        .arg("ssh -o BatchMode=yes -o LogLevel=ERROR")
+        .arg("-r")
+        .arg("--mkpath")
+        .arg("--chmod=Du=rwx,Dgo=,Fu=r,Fgo=") // read-only release content
+        .arg("-z")
+        .arg(&src)
+        .arg(&dest)
+        .stdin(Stdio::null())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .context("spawning rsync (assets)")?
+        .wait()
+        .await
+        .context("waiting for rsync (assets)");
+
+    let _ = std::fs::remove_dir_all(&staging);
+    if !result?.success() {
+        bail!("rsync (assets) failed");
+    }
+    Ok(())
 }
 
 /// Probe git for the current commit and dirty state. Best-effort; returns
@@ -255,6 +441,41 @@ mod tests {
     fn parse_build_rejects_empty() {
         assert!(parse_build_command("").is_err());
         assert!(parse_build_command("   ").is_err());
+    }
+
+    #[test]
+    fn collect_assets_walks_sorted_and_rejects_bad_entries() {
+        let root = std::env::temp_dir().join(format!("shiku-collect-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("projects/p")).unwrap();
+        std::fs::write(root.join("projects/p/b.toml"), b"b").unwrap();
+        std::fs::write(root.join("projects/p/a.toml"), b"a").unwrap();
+
+        // Directory entry → walked recursively, returned sorted by rel path.
+        let files = collect_assets(&root, &["projects/p".to_string()]).expect("collect dir");
+        let rels: Vec<&str> = files.iter().map(|f| f.rel.as_str()).collect();
+        assert_eq!(rels, ["projects/p/a.toml", "projects/p/b.toml"]);
+
+        // A single file entry works too.
+        let one = collect_assets(&root, &["projects/p/a.toml".to_string()]).expect("collect file");
+        assert_eq!(one.len(), 1);
+
+        // Missing entry and `..` escapes are rejected.
+        assert!(collect_assets(&root, &["nope".to_string()]).is_err());
+        assert!(collect_assets(&root, &["../escape".to_string()]).is_err());
+
+        // Symlinks anywhere in the tree are rejected.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(
+                root.join("projects/p/a.toml"),
+                root.join("projects/link.toml"),
+            )
+            .unwrap();
+            assert!(collect_assets(&root, &["projects".to_string()]).is_err());
+        }
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]
